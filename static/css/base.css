@@ -1,0 +1,31 @@
+p {
+    text-align: center;
+    color: black;
+    font-family: arial;
+    font-size: 2rem;
+}
+
+textarea {
+    resize: none;
+    max-width: 400px;
+    max-height: 200px;
+    width: 400px;
+    height: 200px;
+    border: 1px solid grey;
+}
+
+input {
+  width: 80px;
+  height: 40px;
+}
+
+a {
+  color: blue;
+  font-weight: 500;
+  transition: 0.2s color;
+}
+
+a:hover, a:focus {
+  text-decoration: none;
+  outline: none;
+}

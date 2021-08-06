@@ -1,0 +1,16 @@
+{
+    "server": {
+        "ip": "127.0.0.1",
+        "port": 80,
+        "debug_info": false
+    },
+    "database": {
+        "path": ":memory:"
+    },
+    "log": {
+        "path": "app.log"
+    },
+    "link": {
+        "lifetime_sec": 3600
+    }
+}

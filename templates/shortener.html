@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+
+{% block body %}
+<form method="post">
+   <p><b>LINK SHORTENER</b></p>
+    <p><textarea autofocus required name="link"></textarea></p>
+
+    {% if short_link %}
+    <p><i>Shorted URL: <a href="/{{short_link}}">{{short_link}}</a></i></p>
+    {% elif error %}
+    <p><i>{{error}}</i></p>
+    {% endif %}
+
+    <p><input type="submit" value="Shorten"></p>
+</form>
+
+{% endblock %}
