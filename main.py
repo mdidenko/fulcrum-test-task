@@ -1,16 +1,13 @@
+import logging
+from api.exceptions import SQLiteWrapperError
 from config import app, db, SERVER_IP, SERVER_PORT, \
     SERVER_DEBUG_INFO
-import logging
 import views
 
 
 if __name__ == '__main__':
-    if not db.connect():
-        logging.error("- Connection to the"
-                      " database isn't established."
-                      " Service shut down...")
-        raise SystemExit
-    else:
+    try:
+        db.connect()
         db.create_link_table()
         app.run(
             host=SERVER_IP,
@@ -18,3 +15,5 @@ if __name__ == '__main__':
             debug=SERVER_DEBUG_INFO
         )
         db.disconnect()
+    except SQLiteWrapperError as exception:
+        logging.error(exception)

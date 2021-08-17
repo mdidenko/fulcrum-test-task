@@ -1,6 +1,30 @@
 import sqlite3
-import logging
-from typing import Optional, Union
+from functools import wraps
+from typing import Optional, Callable, Any
+from api.exceptions import IntegrityError, \
+    ProgrammingError, OperationalError, NotSupportedError
+
+
+def exception_handler(function: Callable) -> Any:
+    """SQLite Exception wrapper."""
+    @wraps(function)
+    def wrapper(self, *args, **kwargs) -> None:
+        try:
+            return function(self, *args, **kwargs)
+
+        except sqlite3.IntegrityError as exception:
+            raise IntegrityError(exception)
+
+        except sqlite3.ProgrammingError as exception:
+            raise ProgrammingError(exception)
+
+        except sqlite3.OperationalError as exception:
+            raise OperationalError(exception)
+
+        except sqlite3.NotSupportedError as exception:
+            raise NotSupportedError(exception)
+
+    return wrapper
 
 
 class DatabaseAPI:
@@ -10,120 +34,87 @@ class DatabaseAPI:
         self.path = path
         self.connection: Optional[sqlite3.Connection] = None
 
-    def connect(self) -> bool:
+    @exception_handler
+    def connect(self) -> None:
         """Method to connect to database."""
         if not self.connection:
-            try:
-                self.connection = sqlite3.connect(
-                    self.path,
-                    check_same_thread=False
-                )
-            except sqlite3.DatabaseError as db_error:
-                logging.error(f"{DatabaseAPI.__qualname__}: {db_error}")
-                return False
+            self.connection = sqlite3.connect(
+                self.path,
+                check_same_thread=False
+            )
 
-        return True
-
+    @exception_handler
     def disconnect(self) -> None:
         """Method to disconnect from database."""
         if self.connection:
-            try:
-                self.connection.close()
-            except sqlite3.DatabaseError as db_error:
-                logging.error(f"{DatabaseAPI.__qualname__}: {db_error}")
-
+            self.connection.close()
         self.connection = None
 
-    def get_unix_time(self) -> int:
+    @exception_handler
+    def get_unix_time(self) -> Optional[str]:
         """Method to get current unix time from database."""
-        if self.connection:
-            try:
-                cursor = self.connection.cursor()
-                cursor.execute("SELECT strftime('%s', 'now', 'localtime')")
-                response = cursor.fetchone()
-                cursor.close()
-            except sqlite3.DatabaseError as db_error:
-                logging.error(f"{DatabaseAPI.__qualname__}: {db_error}")
-            else:
-                if response:
-                    return int(response[0])
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT strftime('%s', 'now', 'localtime')")
+        response = cursor.fetchone()
+        cursor.close()
 
-        return 0
+        if response:
+            return str(response[0])
+        else:
+            return None
 
-    def create_link_table(self) -> bool:
+    @exception_handler
+    def create_link_table(self) -> None:
         """Method to create table of links in database."""
-        if self.connection:
-            try:
-                cursor = self.connection.cursor()
-                cursor.execute("""CREATE TABLE IF NOT EXISTS links(
-                    original TEXT UNIQUE NOT NULL PRIMARY KEY,
-                    shortened TEXT NOT NULL,
-                    generation_time INTEGER NOT NULL)
-                """)
+        cursor = self.connection.cursor()
+        cursor.execute("""CREATE TABLE IF NOT EXISTS links(
+            original TEXT UNIQUE NOT NULL PRIMARY KEY,
+            shortened TEXT NOT NULL,
+            generation_time INTEGER NOT NULL)
+        """)
+        cursor.close()
+        self.connection.commit()
 
-                cursor.close()
-                self.connection.commit()
-            except sqlite3.DatabaseError as db_error:
-                logging.error(f"{DatabaseAPI.__qualname__}: {db_error}")
-            else:
-                return True
-
-        return False
-
-    def add_new_short_link(self, original_link: str, shorted_link: str) -> bool:
+    @exception_handler
+    def add_new_short_link(self, original_link: str, shorted_link: str) -> None:
         """Method to add new shorted link to database."""
-        if self.connection:
-            try:
-                cursor = self.connection.cursor()
-                cursor.execute(
-                    "INSERT OR IGNORE INTO links VALUES (?, ?, ?)",
-                    (original_link, shorted_link, self.get_unix_time())
-                )
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "INSERT OR IGNORE INTO links VALUES (?, ?, ?)",
+            (original_link, shorted_link, self.get_unix_time())
+        )
+        cursor.close()
+        self.connection.commit()
 
-                cursor.close()
-                self.connection.commit()
-            except sqlite3.DatabaseError as db_error:
-                logging.error(f"{DatabaseAPI.__qualname__}: {db_error}")
-            else:
-                return True
-
-        return False
-
-    def get_original_link(self, shorted_link: str) -> Union[str, bool]:
+    @exception_handler
+    def get_original_link(self, shorted_link: str) -> Optional[str]:
         """Method to get original link from database."""
-        if self.connection:
-            try:
-                cursor = self.connection.cursor()
-                cursor.execute(
-                    "SELECT original FROM links WHERE shortened=?",
-                    (shorted_link,)
-                )
-                response = cursor.fetchone()
-                cursor.close()
-            except sqlite3.DatabaseError as db_error:
-                logging.error(f"{DatabaseAPI.__qualname__}: {db_error}")
-            else:
-                if response:
-                    return str(response[0])
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT original FROM links WHERE shortened=?",
+            (shorted_link,)
+        )
+        response = cursor.fetchone()
+        cursor.close()
 
-        return False
+        if response:
+            return str(response[0])
+        else:
+            return None
 
-    def delete_outdated_links(self, lifetime: int) -> bool:
+    @exception_handler
+    def delete_outdated_links(self, lifetime: int) -> None:
         """Method to delete outdated links from database."""
-        if self.connection:
-            border_link_lifetime = self.get_unix_time() - lifetime
-            try:
-                cursor = self.connection.cursor()
-                cursor.execute(
-                    "DELETE FROM links WHERE generation_time<?",
-                    (border_link_lifetime,)
-                )
-
-                cursor.close()
-                self.connection.commit()
-            except sqlite3.DatabaseError as db_error:
-                logging.error(f"{DatabaseAPI.__qualname__}: {db_error}")
-            else:
-                return True
-
-        return False
+        unix_time = self.get_unix_time()
+        try:
+            border_link_lifetime = int(unix_time) - lifetime
+        except ValueError as exception:
+            raise NotSupportedError(exception)
+        else:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "DELETE FROM links WHERE generation_time<?",
+                (border_link_lifetime,)
+            )
+            cursor.close()
+            self.connection.commit()
